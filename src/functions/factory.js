@@ -24,7 +24,6 @@ export function makeAddSphere (color, posX, posY, posZ, radius, name, delay,scen
       },
       800
     )
-    .delay(30 * delay)
     .easing(TWEEN.Easing.Elastic.Out)
     .start();
   scene.add(mesh);
