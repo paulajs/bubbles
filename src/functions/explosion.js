@@ -1,7 +1,7 @@
 import * as THREE from "three";
 
 export class ExplodeAnimation{
-  constructor(x, y, color, objectSize, totalObjects, scene, dirs){
+  constructor(x, y, color, objectSize, totalObjects, scene, dirs, animationTime){
     this.x = x;
     this.y = y;
     this.color = color;
@@ -9,6 +9,8 @@ export class ExplodeAnimation{
     this.totalObjects = totalObjects;
     this.scene = scene;
     this.dirs = dirs;
+
+    this.animationTime = animationTime;
   }
 
   createPartices(){
@@ -35,6 +37,10 @@ export class ExplodeAnimation{
     this.zDir = (Math.random() * movementSpeed) - (movementSpeed / 2);
 
     this.scene.add(this.object);
+    setTimeout( () => {
+      this.scene.remove(this.object);
+      this.status = false;
+    }, this.animationTime)
   }
 
   update(){
@@ -45,13 +51,6 @@ export class ExplodeAnimation{
         particle.y += this.dirs[pCount].y;
         particle.x += this.dirs[pCount].x;
         particle.z += this.dirs[pCount].z;
-
-        if (particle.z > 20000) {
-          this.scene.remove(this.object);
-
-          this.status = false;
-
-        }
       }
       this.object.geometry.verticesNeedUpdate = true;
     }

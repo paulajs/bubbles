@@ -33,6 +33,13 @@ export default {
   name: "FrontpageEntertainment",
   data() {
     return {
+      game: {
+        isRenderingInitialScene: false,
+        isAnimatingBallHover: false,
+        animateBallHoverPromise: null,
+        isAnimatingExplodingBalls: false,
+        animatingExplodingBalls: null,
+      },
       camera: null,
       scene: null,
       renderer: null,
@@ -73,9 +80,24 @@ export default {
         //initiateCanvasMobile();
       }
     },
+    initiateCanvasDesktop: function() {
+      var canvas = document.querySelector("#container");
+      canvas.addEventListener("mousedown", this.onDocumentMouseDown, false);
+      canvas.addEventListener("mousemove", this.onDocumentMouseMove, false);
+      
+      this.game.isRenderingInitialScene = true;
+      this.createScene(66, 10, 3, -340, -99, 20);
+      this.AddGameBall(-340, -99, 10, 3, 66, 20);
+      this.animate();
+
+      // give the initial ball animation a bit of time to render.
+      setTimeout(() => {
+        this.game.isRenderingInitialScene = false;
+      }, 100);
+    },
     createScene: function(distance, numBallsX, numBallsY, xMin, yMin, radius) {
       this.scene = new THREE.Scene();
-      this.scene.name = "lol";
+      this.scene.name = "buborama";
       this.scene.fog = new THREE.FogExp2(0xcccccc, 0.0026);
       this.addRenderer();
       this.addCamera(0, 0, 390);
@@ -84,21 +106,11 @@ export default {
       this.addLight(0xff00ff, 20, 500, -600);
       this.addLight(0x00ffb6, 300, 300, 50);
 
-      this.AddGameBall(xMin, yMin, numBallsX, numBallsY, distance, radius);
-
       var geometry = new THREE.PlaneGeometry(200, 200, 32);
       var material = new THREE.MeshBasicMaterial({
         color: 0xffff00,
         side: THREE.DoubleSide
       });
-    },
-    initiateCanvasDesktop: function() {
-      this.createScene(66, 10, 3, -340, -99, 20); /*68, 10, 3, -340, -99, 25*/
-      //distance, numBallsX, numBallsY, xMin, yMin, radius
-      this.animate();
-      var canvas = document.querySelector("#container");
-      canvas.addEventListener("mousedown", this.onDocumentMouseDown, false);
-      canvas.addEventListener("mousemove", this.onDocumentMouseMove, false);
     },
     addRenderer: function() {
       this.renderer = new THREE.WebGLRenderer({ alpha: true });
@@ -108,8 +120,8 @@ export default {
       this.renderer.domElement.style.top = 0;
       this.renderer.domElement.style.left = 0;
       this.renderer.setClearColor(0x000000, 0);
-      var canvascon = document.querySelector("#container");
-      canvascon.appendChild(this.renderer.domElement);
+
+      document.querySelector("#container").appendChild(this.renderer.domElement);
     },
     addCamera: function(posX, posY, posZ) {
       this.camera = new THREE.PerspectiveCamera(
@@ -140,12 +152,27 @@ export default {
     },
     onDocumentMouseMove: function(event) {
       if (this.isAnimating === false) {
+        const animationTime = 1500;
+
         let intersects = getIntersects(event, this.camera, this.scene);
         if (intersects.length > 0) {
+          console.log('intersecting!');
+          if(this.game.animateBallHoverPromise) {
+            clearTimeout(this.game.animateBallHoverPromise);
+          } 
+          this.game.animateBallHoverPromise = setTimeout( () => {
+            console.log('stopping animation ball hover')
+            this.game.isAnimatingBallHover = false;
+          }, animationTime)
+
+          this.game.isAnimatingBallHover = true;
+
           mouseMoveSetColor(intersects[0].object.material, this.colorArray);
           document.body.style.cursor = "pointer";
           let num = 2.2 * Math.random() + 0.5;
-          scaleAnimation(intersects[0].object, num, 2500);
+
+
+          scaleAnimation(intersects[0].object, num, 1500);
         } else {
           document.body.style.cursor = "default";
         }
@@ -153,15 +180,10 @@ export default {
     },
     onDocumentMouseDown: function(event) {
       this.isAnimating = true;
-      if (Date.now() < this.newClick) {
-        return;
-      }
+
       if (this.gameEnd == true) {
         this.gameEnded();
       }
-      this.clickTime = Date.now();
-      this.newClick = this.clickTime + 1600;
-
       //sounds.src = "/assets/" + "pop6" + ".mp3";
 
       document.querySelector(".pointsDisplay").style.animation = "none";
@@ -175,7 +197,6 @@ export default {
         //sounds.play();
         setTimeout(() => {
           this.isAnimating = false;
-
           scene.remove(intersects[0].object);
           this.bubblePopDesktop(pointsDisplay, array, event, intersects);
         }, 700);
@@ -212,13 +233,12 @@ export default {
     },
     displayPoints: function(elem, array, e, posX, posY) {
       let points = (array.length + 1) * 1000;
-      console.log(elem);
 
-      /*let backgrounds = [
-        require("/assets/points-background1.svg"),
-        require("/assets/points-background2.svg"),
-        require("/assets/points-background3.svg")
-      ];*/
+      let backgrounds = [
+        require("../assets/img/SVG/points-background1.svg"),
+        require("../assets/img/SVG/points-background2.svg"),
+        require("../assets/img/SVG/points-background3.svg")
+      ];
       let randomNum = Math.floor(Math.random() * 3);
       let str = "+" + String(points);
       elem.innerHTML = str;
@@ -272,6 +292,7 @@ export default {
       return count;
     },
     addFireworks: function(intersects, objectSize, totalObjects, scene, dirs) {
+      const explosionTime = 5000;
       const expPosX = intersects[0].object.position.x;
       const expPosY = intersects[0].object.position.y;
       const expColor = intersects[0].object.material.color.getHex();
@@ -282,17 +303,32 @@ export default {
         objectSize,
         totalObjects,
         scene,
-        dirs
+        dirs,
+        explosionTime
       );
       particles.createPartices();
+      if(this.game.animatingExplodingBalls) {
+        clearTimeout(this.game.animatingExplodingBalls);
+      }
+      this.game.animatingExplodingBalls = setTimeout( () => {
+        this.game.isAnimatingExplodingBalls = false;
+      }, explosionTime + 100);
+      this.game.isAnimatingExplodingBalls = true;
       /*if (this.parts.length > 0) {
         this.parts.pop();
       }*/
       this.parts.push(particles);
-      console.log(this.parts);
     },
     animate: function() {
-      requestAnimationFrame(this.animate);
+      const skipAnimation = 
+           (this.game.isRenderingInitialScene === false) 
+        && (this.game.isAnimatingBallHover === false) 
+        && (this.game.isAnimatingExplodingBalls === false)
+      ;
+      if(skipAnimation) {
+        requestAnimationFrame(this.animate);
+        return;
+      }
 
       TWEEN.update();
       let pCount = this.parts.length;
@@ -301,6 +337,8 @@ export default {
         this.parts[pCount].update();
       }
       this.renderer.render(this.scene, this.camera);
+      // @todo throttle this when unused
+      requestAnimationFrame(this.animate);
     }
   },
   mounted() {
