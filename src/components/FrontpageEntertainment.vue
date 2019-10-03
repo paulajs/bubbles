@@ -33,7 +33,17 @@ export default {
   name: "FrontpageEntertainment",
   data() {
     return {
+      selectors: {
+        pointsDisplay: '.pointsDisplay',
+      },
+      elements: {
+        pointsDisplay: null
+      },
       game: {
+        currentIntersection: null,
+        balls: [],
+        previousBallId: 0, // zero means no balld id
+        isMouseOnBall: false,
         isRenderingInitialScene: false,
         isAnimatingBallHover: false,
         animateBallHoverPromise: null,
@@ -52,7 +62,6 @@ export default {
       bubbleBurst: false,
       particles: null,
       movementSpeed: 80,
-      pointsDisplay: document.querySelector(".pointsDisplay"),
       //backWin: document.querySelector('#full-screen-win'),
       colorArray: [
         0xff00ff,
@@ -74,10 +83,16 @@ export default {
   },
   methods: {
     init: function() {
+      this.setSelectors();
       if (window.innerWidth >= 736) {
         this.initiateCanvasDesktop();
       } else {
         //initiateCanvasMobile();
+      }
+    },
+    setSelectors() {
+      for (const [key, selector] of Object.entries(this.selectors)) {
+        this.elements[key] = document.querySelector(selector);
       }
     },
     initiateCanvasDesktop: function() {
@@ -97,7 +112,7 @@ export default {
     },
     createScene: function(distance, numBallsX, numBallsY, xMin, yMin, radius) {
       this.scene = new THREE.Scene();
-      this.scene.name = "buborama";
+      this.scene.name = "bubbleorama";
       this.scene.fog = new THREE.FogExp2(0xcccccc, 0.0026);
       this.addRenderer();
       this.addCamera(0, 0, 390);
@@ -150,59 +165,69 @@ export default {
         }
       }
     },
+    setMouseHoverIntersection(event) {
+      this.game.currentIntersection = getIntersects(event, this.camera, this.scene);
+    },
     onDocumentMouseMove: function(event) {
-      if (this.isAnimating === false) {
-        const animationTime = 1500;
+      this.setMouseHoverIntersection(event);
+      const previousBallId = this.game.previousBallId;
 
-        let intersects = getIntersects(event, this.camera, this.scene);
-        if (intersects.length > 0) {
-          console.log('intersecting!');
-          if(this.game.animateBallHoverPromise) {
-            clearTimeout(this.game.animateBallHoverPromise);
-          } 
-          this.game.animateBallHoverPromise = setTimeout( () => {
-            console.log('stopping animation ball hover')
-            this.game.isAnimatingBallHover = false;
-          }, animationTime)
-
-          this.game.isAnimatingBallHover = true;
-
-          mouseMoveSetColor(intersects[0].object.material, this.colorArray);
-          document.body.style.cursor = "pointer";
-          let num = 2.2 * Math.random() + 0.5;
-
-
-          scaleAnimation(intersects[0].object, num, 1500);
-        } else {
-          document.body.style.cursor = "default";
+      if (this.game.currentIntersection.length > 0) {
+        const ball = this.game.currentIntersection[0].object;
+        const ballId = ball.id;
+        this.game.balls[ballId] = true;
+        this.game.previousBallId = ball.id;
+        if(previousBallId !== ball.id) {
+          this.onMouseHoverBall(ball);
         }
+      } else {
+        this.game.balls[previousBallId] = 0;
+        this.game.previousBallId = 0;
+        this.setMouseAsDefault();
       }
     },
+    onMouseHoverBall: function(ball) {
+      this.setMouseAsPointer();
+      this.randomizeBallColorAndSize(ball)
+    },
+    randomizeBallColorAndSize: function(ball, scaleFactor = 2.2 * Math.random() + 0.5, animationTime = 1500) {      
+      if(this.game.animateBallHoverPromise) {
+        clearTimeout(this.game.animateBallHoverPromise);
+      } 
+      this.game.animateBallHoverPromise = setTimeout( () => {
+        console.log('stopping animation ball hover')
+        this.game.isAnimatingBallHover = false;
+      }, animationTime)
+      this.game.isAnimatingBallHover = true;
+      mouseMoveSetColor(ball.material, this.colorArray);
+      scaleAnimation(ball, scaleFactor, animationTime);
+    },
+    setMouseAsPointer: function() {
+      document.body.style.cursor = "pointer";
+    },
+    setMouseAsDefault: function() {
+      document.body.style.cursor = "default";
+    },
     onDocumentMouseDown: function(event) {
-      this.isAnimating = true;
-
-      if (this.gameEnd == true) {
-        this.gameEnded();
+      // constsounds.src = "/assets/" + "pop6" + ".mp3"; @todo move to top assets
+      if (this.gameEnd) {
+        return;
       }
-      //sounds.src = "/assets/" + "pop6" + ".mp3";
-
-      document.querySelector(".pointsDisplay").style.animation = "none";
-      let intersects = getIntersects(event, this.camera, this.scene);
-      let scene = this.scene;
-      let pointsDisplay = document.querySelector(".pointsDisplay");
-
-      if (intersects.length > 0) {
-        let array = getIntersectingBalls(intersects[0].object, this.scene);
-        scaleAnimation(intersects[0].object, 10, 700);
-        //sounds.play();
-        setTimeout(() => {
-          this.isAnimating = false;
-          scene.remove(intersects[0].object);
-          this.bubblePopDesktop(pointsDisplay, array, event, intersects);
-        }, 700);
-      } else {
-        this.isAnimating = false;
+      if(!this.game.currentIntersection) {
+        return;
       }
+
+      const animationTime = 700;
+      const scaleFactor = 10;
+      const currentIntersection = this.game.currentIntersection;
+      const ball = this.game.currentIntersection[0]
+      const intersectingBalls = getIntersectingBalls(ball.object, this.scene);
+      scaleAnimation(ball.object, scaleFactor, animationTime);
+      setTimeout(() => {
+        this.scene.remove(ball.object);
+        // sounds.play();
+        this.bubblePopDesktop(this.elements.pointsDisplay, intersectingBalls, event, ball);
+      }, animationTime);
     },
     gameEnded: function() {
       this.gameEnd = false;
@@ -220,11 +245,11 @@ export default {
         initiateCanvasMobile();
       }*/
     },
-    bubblePopDesktop: function(elem, array, e, intersects) {
+    bubblePopDesktop: function(elem, array, e, ball) {
       this.displayPoints(elem, array, e, e.clientX + "px", e.clientY + "px");
       this.removeBallsDesktop(array);
       this.addFireworks(
-        intersects,
+        ball,
         150,
         100 + 300 * array.length,
         this.scene,
@@ -232,7 +257,8 @@ export default {
       );
     },
     displayPoints: function(elem, array, e, posX, posY) {
-      let points = (array.length + 1) * 1000;
+      const points = (array.length + 1) * 1000;
+      const element = this.elements.pointsDisplay;
 
       let backgrounds = [
         require("../assets/img/SVG/points-background1.svg"),
@@ -241,12 +267,12 @@ export default {
       ];
       let randomNum = Math.floor(Math.random() * 3);
       let str = "+" + String(points);
-      elem.innerHTML = str;
-      elem.style.left = posX;
-      elem.style.top = posY;
-      elem.style.color = "#fff";
-      elem.style.webkitTextStroke = "1px #000";
-      elem.style.background =
+      this.elements.pointsDisplay.innerHTML = str;
+      element.style.left = posX;
+      element.style.top = posY;
+      element.style.color = "#fff";
+      element.style.webkitTextStroke = "1px #000";
+      element.style.background =
         "url('" + backgrounds[randomNum] + "') no-repeat top left";
       //elem.style.animation = "pointsAnim 1.25s ease-in";
     },
@@ -291,11 +317,11 @@ export default {
       }
       return count;
     },
-    addFireworks: function(intersects, objectSize, totalObjects, scene, dirs) {
+    addFireworks: function(ball, objectSize, totalObjects, scene, dirs) {
       const explosionTime = 5000;
-      const expPosX = intersects[0].object.position.x;
-      const expPosY = intersects[0].object.position.y;
-      const expColor = intersects[0].object.material.color.getHex();
+      const expPosX = ball.object.position.x;
+      const expPosY = ball.object.position.y;
+      const expColor = ball.object.material.color.getHex();
       let particles = new ExplodeAnimation(
         expPosX,
         expPosY,
