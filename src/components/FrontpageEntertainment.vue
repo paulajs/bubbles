@@ -4,6 +4,7 @@
     <img class="page-logo" alt="page logo" src="../assets/img/SVG/logo.svg">
     <div id="container">
         <p class="pointsDisplay"></p>
+        <canvas></canvas>
       <audio id="bubbleSounds" src></audio>
       <video
         src = ""
@@ -33,15 +34,53 @@ export default {
   name: "FrontpageEntertainment",
   data() {
     return {
+      config: {
+        debug: true,
+        displayDesktopMinSize: 736,
+        renderer: {
+          width: window.innerWidth,
+          height: window.innerHeight,
+          parameters: {
+            alpha: true,
+          }
+        },
+        scene: {
+          camera: {
+            distance: 390,
+          },
+          balls: {
+            distance: 66, 
+            numBallsX: 10, 
+            numBallsY: 3, 
+            xMin: -340, 
+            yMin: -99, 
+            radius: 20,
+
+            scaleAnimation: {
+              animationTime: 500,
+              scaleFactor: 10,
+            },
+            hoverAnimation: {
+              scaleFactorMultiplier: 2.2,
+              animationTime:  1500
+            }
+          }
+        }
+      },
       selectors: {
+        canvas: '#container canvas',
+        container: '#container',
         pointsDisplay: '.pointsDisplay',
       },
       elements: {
-        pointsDisplay: null
+        canvas: null,
+        container: null,
+        pointsDisplay: null,
       },
       game: {
         currentIntersection: null,
         balls: [],
+        ballIsClicked: {},
         previousBallId: 0, // zero means no balld id
         isMouseOnBall: false,
         isRenderingInitialScene: false,
@@ -83,11 +122,19 @@ export default {
   },
   methods: {
     init: function() {
-      this.setSelectors();
-      if (window.innerWidth >= 736) {
+      if (window.innerWidth >= this.config.displayDesktopMinSize) {
         this.initiateCanvasDesktop();
       } else {
         //initiateCanvasMobile();
+      }
+    },
+    log(message, data = undefined) {
+      if(this.config.debug) {
+        if(data) {
+          console.log(message);
+        } else {
+          console.log(message, data);
+        }
       }
     },
     setSelectors() {
@@ -95,48 +142,45 @@ export default {
         this.elements[key] = document.querySelector(selector);
       }
     },
-    initiateCanvasDesktop: function() {
-      var canvas = document.querySelector("#container");
-      canvas.addEventListener("mousedown", this.onDocumentMouseDown, false);
-      canvas.addEventListener("mousemove", this.onDocumentMouseMove, false);
-      
-      this.game.isRenderingInitialScene = true;
-      this.createScene(66, 10, 3, -340, -99, 20);
-      this.AddGameBall(-340, -99, 10, 3, 66, 20);
+    setStyle(element, style) {
+      for (const key in style) {
+        element.style[key] = style[key];
+      }
+    },
+    initiateCanvasDesktop: function() {      
+      this.setSelectors();
+      this.createScene();
+      this.setSelectors();
+      this.setCanvasMouseHandlers();
+      this.AddGameBall();
       this.animate();
 
+      this.game.isRenderingInitialScene = true;
       // give the initial ball animation a bit of time to render.
       setTimeout(() => {
         this.game.isRenderingInitialScene = false;
       }, 100);
     },
-    createScene: function(distance, numBallsX, numBallsY, xMin, yMin, radius) {
+    createScene: function() {
       this.scene = new THREE.Scene();
-      this.scene.name = "bubbleorama";
       this.scene.fog = new THREE.FogExp2(0xcccccc, 0.0026);
       this.addRenderer();
-      this.addCamera(0, 0, 390);
-
+      this.addCamera(0, 0, this.config.scene.camera.distance);
       this.addLight(0xffffff, 50, 200, 200);
       this.addLight(0xff00ff, 20, 500, -600);
       this.addLight(0x00ffb6, 300, 300, 50);
-
-      var geometry = new THREE.PlaneGeometry(200, 200, 32);
-      var material = new THREE.MeshBasicMaterial({
-        color: 0xffff00,
-        side: THREE.DoubleSide
-      });
+    },
+    setCanvasMouseHandlers() {
+      this.elements.canvas.addEventListener("mousedown", this.onDocumentMouseDown, false);
+      this.elements.canvas.addEventListener("mousemove", this.onDocumentMouseMove, false);
     },
     addRenderer: function() {
-      this.renderer = new THREE.WebGLRenderer({ alpha: true });
-      this.renderer.setSize(window.innerWidth, window.innerHeight);
-      this.renderer.setPixelRatio(window.devicePixelRatio);
-      this.renderer.domElement.style.position = 'absolute';
-      this.renderer.domElement.style.top = 0;
-      this.renderer.domElement.style.left = 0;
-      this.renderer.setClearColor(0x000000, 0);
+      const rendererParams = Object.assign({}, this.config.renderer.parameters, {canvas: this.elements.canvas});
 
-      document.querySelector("#container").appendChild(this.renderer.domElement);
+      this.renderer = new THREE.WebGLRenderer(rendererParams);
+      this.renderer.setSize(this.config.renderer.width, this.config.renderer.height);
+      this.renderer.setPixelRatio(this.config.renderer.pixelRatio);
+      this.renderer.setClearColor(0xffffff, 0);
     },
     addCamera: function(posX, posY, posZ) {
       this.camera = new THREE.PerspectiveCamera(
@@ -145,23 +189,31 @@ export default {
         1,
         10000
       );
-      this.camera.position.set(posX, posY, posZ); //450
+      this.camera.position.set(posX, posY, posZ);
       this.scene.add(this.camera);
     },
     addLight: function(color, posX, posY, posZ) {
-      var light = new THREE.SpotLight(color);
+      const light = new THREE.SpotLight(color);
       light.position.set(posX, posY, posZ);
       this.scene.add(light);
     },
-    AddGameBall: function(xMin, yMin, numBallsX, numBallsY, distance, radius) {
-      var xMax = xMin + numBallsX * distance;
-      var yMax = yMin + numBallsY * distance;
-      var count = 0;
-      for (var i = xMin; i <= xMax; i += distance) {
-        for (var j = yMin; j <= yMax; j += distance) {
-          var objName = String(i) + String(j);
+    AddGameBall: function() {
+      const xMin = this.config.scene.balls.xMin;
+      const yMin = this.config.scene.balls.yMin;
+      const numBallsX = this.config.scene.balls.numBallsX;
+      const numBallsY = this.config.scene.balls.numBallsY;
+      const distance = this.config.scene.balls.distance;
+      const radius = this.config.scene.balls.radius;
+
+      const xMax = xMin + numBallsX * distance;
+      const yMax = yMin + numBallsY * distance;
+      
+      let count = 0;
+      for (let i = xMin; i <= xMax; i += distance) {
+        for (let j = yMin; j <= yMax; j += distance) {
+          const objName = String(i) + String(j);
           makeAddSphere(0xffffff, i, j, 0, radius, objName, count, this.scene);
-          count = count + 1;
+          count++;
         }
       }
     },
@@ -190,14 +242,17 @@ export default {
       this.setMouseAsPointer();
       this.randomizeBallColorAndSize(ball)
     },
-    randomizeBallColorAndSize: function(ball, scaleFactor = 2.2 * Math.random() + 0.5, animationTime = 1500) {      
+    randomizeBallColorAndSize: function(ball) {   
+      const animationTime = this.config.scene.balls.hoverAnimation.animationTime;
+      const scaleFactor = this.config.scene.balls.hoverAnimation.scaleFactorMultiplier * Math.random() + 0.5;
+
       if(this.game.animateBallHoverPromise) {
         clearTimeout(this.game.animateBallHoverPromise);
       } 
       this.game.animateBallHoverPromise = setTimeout( () => {
-        console.log('stopping animation ball hover')
         this.game.isAnimatingBallHover = false;
       }, animationTime)
+
       this.game.isAnimatingBallHover = true;
       mouseMoveSetColor(ball.material, this.colorArray);
       scaleAnimation(ball, scaleFactor, animationTime);
@@ -210,28 +265,41 @@ export default {
     },
     onDocumentMouseDown: function(event) {
       // constsounds.src = "/assets/" + "pop6" + ".mp3"; @todo move to top assets
+
+      // @todo remove this, detach the click listener instead
       if (this.gameEnd) {
         return;
       }
       if(!this.game.currentIntersection) {
         return;
       }
-
-      const animationTime = 700;
-      const scaleFactor = 10;
       const currentIntersection = this.game.currentIntersection;
       const ball = this.game.currentIntersection[0]
+      if(!ball) {
+        return;
+      }
+
+      if(this.game.ballIsClicked[ball.object.id]) {
+        return
+      } else {
+        this.game.ballIsClicked[ball.object.id] = true;
+      }
       const intersectingBalls = getIntersectingBalls(ball.object, this.scene);
-      scaleAnimation(ball.object, scaleFactor, animationTime);
+
+      scaleAnimation(
+        ball.object, 
+        this.config.scene.balls.scaleAnimation.scaleFactor, 
+        this.config.scene.balls.scaleAnimation.animationTime
+      );
       setTimeout(() => {
-        this.scene.remove(ball.object);
         // sounds.play();
         this.bubblePopDesktop(this.elements.pointsDisplay, intersectingBalls, event, ball);
-      }, animationTime);
+        this.scene.remove(ball.object);
+      }, this.config.scene.balls.scaleAnimation.animationTime);
     },
     gameEnded: function() {
       this.gameEnd = false;
-      console.log("end of game");
+      this.log("end of game");
       //backWin.src = "";
       while (this.scene.children.length > 0) {
         this.scene.remove(scene.children[0]);
@@ -259,15 +327,14 @@ export default {
     displayPoints: function(elem, array, e, posX, posY) {
       const points = (array.length + 1) * 1000;
       const element = this.elements.pointsDisplay;
-
-      let backgrounds = [
+      const randomNum = Math.floor(Math.random() * 3);
+      const str = "+" + String(points);
+      const backgrounds = [
         require("../assets/img/SVG/points-background1.svg"),
         require("../assets/img/SVG/points-background2.svg"),
         require("../assets/img/SVG/points-background3.svg")
       ];
-      let randomNum = Math.floor(Math.random() * 3);
-      let str = "+" + String(points);
-      this.elements.pointsDisplay.innerHTML = str;
+      element.innerHTML = str;
       element.style.left = posX;
       element.style.top = posY;
       element.style.color = "#fff";
@@ -363,7 +430,6 @@ export default {
         this.parts[pCount].update();
       }
       this.renderer.render(this.scene, this.camera);
-      // @todo throttle this when unused
       requestAnimationFrame(this.animate);
     }
   },
@@ -400,6 +466,12 @@ a {
   position: absolute;
   top: 0;
   left: 0;
+
+  canvas: {
+    position: 'absolute';
+    top: 0;
+    left: 0;
+  }
   .bubbles{
     position: absolute;
     top: 0;

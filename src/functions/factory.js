@@ -22,7 +22,7 @@ export function makeAddSphere (color, posX, posY, posZ, radius, name, delay,scen
         y: 1,
         z: 1
       },
-      800
+      0
     )
     .easing(TWEEN.Easing.Elastic.Out)
     .start();
