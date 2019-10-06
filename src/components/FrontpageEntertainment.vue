@@ -3,7 +3,7 @@
     <video  class="case-videos" muted loop  poster="../assets/videos/case-vid-test7.svg" src="../assets/videos/case-vid-test.mp4"></video>
     <img class="page-logo" alt="page logo" src="../assets/img/SVG/logo.svg">
     <div id="container">
-        <p class="pointsDisplay"></p>
+        <div class="pointsDisplay"></div>
         <canvas></canvas>
       <audio id="bubbleSounds" src></audio>
       <video
@@ -23,8 +23,8 @@
 import * as THREE from "three";
 import * as TWEEN from "tween";
 import { ExplodeAnimation } from "../functions/explosion.js";
-import {makeAddSphere} from '../functions/factory.js';
-import {getIntersectingBalls} from '../functions/factory.js';
+import { makeSphere } from '../functions/factory.js';
+import {getIntersectingBallsObject} from '../functions/factory.js';
 import {mouseMoveSetColor} from '../functions/factory.js';
 import {scaleAnimation} from '../functions/factory.js';
 import {getIntersects} from '../functions/factory.js';
@@ -42,16 +42,21 @@ export default {
           height: window.innerHeight,
           parameters: {
             alpha: true,
+            antialias: true,
           }
         },
         scene: {
           camera: {
             distance: 390,
           },
+          displayPoints: {
+            offsetX: 120,
+            offsetY: 50,
+          },
           balls: {
             distance: 66, 
-            numBallsX: 10, 
-            numBallsY: 3, 
+            numBallsX: 10,
+            numBallsY: 4, 
             xMin: -340, 
             yMin: -99, 
             radius: 20,
@@ -63,6 +68,9 @@ export default {
             hoverAnimation: {
               scaleFactorMultiplier: 2.2,
               animationTime:  1500
+            },
+            explosion: {
+              animaTionTime: 4000,
             }
           }
         }
@@ -79,7 +87,7 @@ export default {
       },
       game: {
         currentIntersection: null,
-        balls: [],
+        balls: {},
         ballIsClicked: {},
         previousBallId: 0, // zero means no balld id
         isMouseOnBall: false,
@@ -131,9 +139,9 @@ export default {
     log(message, data = undefined) {
       if(this.config.debug) {
         if(data) {
-          console.log(message);
-        } else {
           console.log(message, data);
+        } else {
+          console.log(message);
         }
       }
     },
@@ -209,10 +217,12 @@ export default {
       const yMax = yMin + numBallsY * distance;
       
       let count = 0;
-      for (let i = xMin; i <= xMax; i += distance) {
-        for (let j = yMin; j <= yMax; j += distance) {
+      for (let i = xMin; i < xMax; i += distance) {
+        for (let j = yMin; j < yMax; j += distance) {
           const objName = String(i) + String(j);
-          makeAddSphere(0xffffff, i, j, 0, radius, objName, count, this.scene);
+          const ball = makeSphere(0xffffff, i, j, 0, radius, objName, count, this.scene);
+          this.scene.add(ball);
+          this.game.balls[ball.id] = ball;
           count++;
         }
       }
@@ -227,13 +237,11 @@ export default {
       if (this.game.currentIntersection.length > 0) {
         const ball = this.game.currentIntersection[0].object;
         const ballId = ball.id;
-        this.game.balls[ballId] = true;
         this.game.previousBallId = ball.id;
         if(previousBallId !== ball.id) {
           this.onMouseHoverBall(ball);
         }
       } else {
-        this.game.balls[previousBallId] = 0;
         this.game.previousBallId = 0;
         this.setMouseAsDefault();
       }
@@ -264,6 +272,7 @@ export default {
       document.body.style.cursor = "default";
     },
     onDocumentMouseDown: function(event) {
+      // @todo make click pop sound
       // constsounds.src = "/assets/" + "pop6" + ".mp3"; @todo move to top assets
 
       // @todo remove this, detach the click listener instead
@@ -273,6 +282,7 @@ export default {
       if(!this.game.currentIntersection) {
         return;
       }
+
       const currentIntersection = this.game.currentIntersection;
       const ball = this.game.currentIntersection[0]
       if(!ball) {
@@ -284,7 +294,7 @@ export default {
       } else {
         this.game.ballIsClicked[ball.object.id] = true;
       }
-      const intersectingBalls = getIntersectingBalls(ball.object, this.scene);
+      const intersectingBallsObjects = getIntersectingBallsObject(ball.object, this.scene);
 
       scaleAnimation(
         ball.object, 
@@ -292,18 +302,32 @@ export default {
         this.config.scene.balls.scaleAnimation.animationTime
       );
       setTimeout(() => {
+        // @todo explosion sound?
         // sounds.play();
-        this.bubblePopDesktop(this.elements.pointsDisplay, intersectingBalls, event, ball);
-        this.scene.remove(ball.object);
+        this.bubblePopDesktop(this.elements.pointsDisplay, intersectingBallsObjects, event, ball);
+        this.removeBall(ball)
+        intersectingBallsObjects.forEach(ballObject => {
+          this.removeBallObject(ballObject);
+        })
+        if(!Object.entries(this.game.balls).length) {
+          this.log('game over!');
+          // this.gameWin();
+        }
       }, this.config.scene.balls.scaleAnimation.animationTime);
     },
+    removeBall: function(ball) {
+      this.removeBallObject(ball.object)
+    },
+    removeBallObject: function(ballObject) {
+      delete this.game.balls[ballObject.id];
+      this.scene.remove(ballObject);
+    },
     gameEnded: function() {
-      this.gameEnd = false;
+      this.gameEnd = true;
       this.log("end of game");
+      this.clearScene();
       //backWin.src = "";
-      while (this.scene.children.length > 0) {
-        this.scene.remove(scene.children[0]);
-      }
+      
       /*let bubblesElem = document.querySelector("#bubbles-container");
       let bubblesOldCanvas = bubblesElem.children[0];
       bubblesElem.removeChild(bubblesOldCanvas);
@@ -313,45 +337,42 @@ export default {
         initiateCanvasMobile();
       }*/
     },
+    clearScene: function() {
+      while (this.scene.children.length > 0) {
+        this.scene.remove(scene.children[0]);
+      }
+    },
     bubblePopDesktop: function(elem, array, e, ball) {
-      this.displayPoints(elem, array, e, e.clientX + "px", e.clientY + "px");
-      this.removeBallsDesktop(array);
+      this.displayPoints(elem, array, e, e.clientX, e.clientY);
       this.addFireworks(
         ball,
         150,
         100 + 300 * array.length,
-        this.scene,
-        this.dirs
       );
     },
     displayPoints: function(elem, array, e, posX, posY) {
-      const points = (array.length + 1) * 1000;
       const element = this.elements.pointsDisplay;
-      const randomNum = Math.floor(Math.random() * 3);
-      const str = "+" + String(points);
       const backgrounds = [
         require("../assets/img/SVG/points-background1.svg"),
         require("../assets/img/SVG/points-background2.svg"),
         require("../assets/img/SVG/points-background3.svg")
       ];
+      const points = (array.length + 1) * 1000;
+      const randomNum = Math.floor(Math.random() * backgrounds.length);
+      const str = "+" + String(points);
+
       element.innerHTML = str;
-      element.style.left = posX;
-      element.style.top = posY;
+      element.style.left = (posX - this.config.scene.displayPoints.offsetX)+'px';
+      element.style.top = (posY - this.config.scene.displayPoints.offsetY)+'px';
       element.style.color = "#fff";
       element.style.webkitTextStroke = "1px #000";
       element.style.background =
         "url('" + backgrounds[randomNum] + "') no-repeat top left";
-      //elem.style.animation = "pointsAnim 1.25s ease-in";
-    },
-    removeBallsDesktop: function(array) {
-      for (let i = 0; i < array.length; i++) {
-        for (let j = 0; j < this.scene.children.length; j++) {
-          if (array[i] == this.scene.children[j].name) {
-            this.scene.remove(this.scene.children[j]);
-          }
-        }
-      }
-      this.congratulate(0);
+
+      element.classList.add('pointsTransition');
+      setTimeout(() => {
+        element.classList.remove('pointsTransition');
+      }, 1000);
     },
     congratulate: function(minBall) {
       if (this.countBalls() === minBall) {
@@ -382,21 +403,20 @@ export default {
           count += 1;
         }
       }
+      this.log('balls left', count);
       return count;
     },
-    addFireworks: function(ball, objectSize, totalObjects, scene, dirs) {
-      const explosionTime = 5000;
-      const expPosX = ball.object.position.x;
-      const expPosY = ball.object.position.y;
-      const expColor = ball.object.material.color.getHex();
+    addFireworks: function(ball, objectSize, totalObjects) {
+      const explosionTime = this.config.scene.balls.explosion.animaTionTime;
+
       let particles = new ExplodeAnimation(
-        expPosX,
-        expPosY,
-        expColor,
+        ball.object.position.x,
+        ball.object.position.y,
+        ball.object.material.color.getHex(),
         objectSize,
         totalObjects,
-        scene,
-        dirs,
+        this.scene,
+        this.dirs,
         explosionTime
       );
       particles.createPartices();
@@ -405,11 +425,10 @@ export default {
       }
       this.game.animatingExplodingBalls = setTimeout( () => {
         this.game.isAnimatingExplodingBalls = false;
+        this.parts = []; // clear out particles when done animating
       }, explosionTime + 100);
       this.game.isAnimatingExplodingBalls = true;
-      /*if (this.parts.length > 0) {
-        this.parts.pop();
-      }*/
+
       this.parts.push(particles);
     },
     animate: function() {
@@ -480,6 +499,7 @@ a {
 }
 
 .pointsDisplay {
+  user-select: none;
   position: absolute;
   z-index: 1000;
   color: #000;
@@ -488,21 +508,19 @@ a {
   font-family: "Poppins", sans-serif;
   font-weight: 800;
   transform: scale(0);
-  /*background: url("../assets/points-background1.svg") no-repeat*/
   top: left;
   background-size: cover;
-  animation: none;
 }
-.pointsTransition{
-  animation: pointsAnim 1.25s ease-out;
+.pointsTransition {
+  animation: pointsAnim 1s ease-out;
 }
 @keyframes pointsAnim{
 	0%{
-        display: block;
+    display: block;
 		transform: scale(0);
 	}
 	100%{
 		transform: scale(2);
-    }
+  }
 }
 </style>
