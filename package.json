@@ -12,7 +12,7 @@
     "vue": "^2.6.10",
     "vue-router": "^3.0.3",
     "vuex": "^3.0.1",
-    "three": "^0.105.1",
+    "three": "^0.137.0",
     "three-canvas-renderer": "^2.0.0",
     "three.js-projector": "^3.0.6",
     "tween": "^0.9.0",
